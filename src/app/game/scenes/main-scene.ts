@@ -1,3 +1,5 @@
+import { Game } from 'phaser';
+import { GameState } from '../game-state';
 import { GameComponent } from '../game.component';
 
 const sceneConfig: Phaser.Types.Scenes.SettingsConfig = {
@@ -6,40 +8,15 @@ const sceneConfig: Phaser.Types.Scenes.SettingsConfig = {
   key: 'Game',
 };
 export class MainScene extends Phaser.Scene {
-  //Declare all variable used
-  private square!: Phaser.GameObjects.Rectangle & {
-    body: Phaser.Physics.Arcade.Body;
-  };
-  private coins!: Phaser.Physics.Arcade.Group;
-  private coinCount!: number;
-  private enemies!: Phaser.Physics.Arcade.Group;
-  private healthPoints!: number;
-  pauseText!: Phaser.GameObjects.Text;
-  infoText!: Phaser.GameObjects.Text;
+  gameState!: GameState;
 
   constructor() {
     super(sceneConfig);
   }
 
-  //Helper function to update the info text when changing states
-  updateInfoText() {
-    this.infoText
-      .setText(`Coin count: ${this.coinCount}, Health: ${this.healthPoints}
-Press 'Space' to pause`);
-  }
-
-  //Function that gets called when a player has collected a coin
-  collectCoin = (player: any, coin: any) => {
-    coin.destroy(coin.x, coin.y);
-    this.coinCount++;
-    this.updateInfoText();
-    this.checkGameOver();
-    return false;
-  };
-
   //Function that gets called when there is collision between player and enemy
   hitEnemy = (player: any, enemy: any) => {
-    this.healthPoints--;
+    this.gameState.decreaseHealth();
     this.tweens.add({
       targets: player,
       alpha: 0,
@@ -48,9 +25,18 @@ Press 'Space' to pause`);
       repeat: 1,
       yoyo: true,
     });
-    this.updateInfoText();
+    this.gameState.updateInfoText();
     enemy.destroy();
-    this.checkGameOver();
+    this.gameState.checkGameOver(this);
+  };
+
+  //Function that gets called when a player has collected a coin
+  collectCoin = (player: any, coin: any) => {
+    coin.destroy(coin.x, coin.y);
+    this.gameState.increaseScore();
+    this.gameState.updateInfoText();
+    this.gameState.checkGameOver(this);
+    return false;
   };
 
   //Function that loads between 1 and 9 coins at the start at random positions in the scene
@@ -89,74 +75,26 @@ Press 'Space' to pause`);
     }
   }
 
-  //Function that shows the restart button at the end of the game
-  showRestartButton() {
-    let button = this.add
-      .text(this.cameras.main.centerX, this.cameras.main.centerY, 'Restart')
-      .setOrigin(0.5)
-      .setPadding(10)
-      .setStyle({ backgroundColor: '#111', fontSize: '48px' })
-      .setInteractive({ useHandCursor: true })
-      .on(
-        'pointerdown',
-        () => {
-          this.scene.restart();
-        },
-        this
-      )
-      .on('pointerover', () => button.setStyle({ fill: '#f39c12' }))
-      .on('pointerout', () => button.setStyle({ fill: '#FFF' }));
-    return button;
+  preload() {
+    this.gameState = new GameState();
   }
-
-  //Helper function to clear scene after finishing the game
-  clearScene() {
-    this.enemies.children.getArray().forEach((x) => x.destroy());
-    this.coins.children.getArray().forEach((x) => x.destroy());
-  }
-
-  //Function that checks if the player has lost all health points or has collected all coins
-  checkGameOver() {
-    if (this.healthPoints == 0) {
-      this.infoText.setText("Press 'Space' to pause");
-      const loseText = this.add
-        .text(
-          this.cameras.main.centerX,
-          this.cameras.main.centerY - 80,
-          `Game over! Your score: ${this.coinCount}`
-        )
-        .setOrigin(0.5)
-        .setStyle({ fontSize: '48px' });
-      this.clearScene();
-      this.showRestartButton();
-    } else if (this.coins.children.size == 0) {
-      this.infoText.setText("Press 'Space' to pause");
-      const winText = this.add
-        .text(
-          this.cameras.main.centerX,
-          this.cameras.main.centerY - 80,
-          `You won! Your score: ${this.coinCount}`
-        )
-        .setOrigin(0.5)
-        .setStyle({ fontSize: '48px' });
-      this.clearScene();
-      this.showRestartButton();
-    }
-    return false;
-  }
-
-  preload() {}
 
   //Create method called at the start of the game
   create() {
-    this.square = this.add.rectangle(400, 400, 50, 50, 0xffffff) as any;
-    this.coinCount = 0;
-    this.healthPoints = 3;
+    this.gameState.square = this.add.rectangle(
+      400,
+      400,
+      50,
+      50,
+      0xffffff
+    ) as any;
+    this.gameState.coinCount = 0;
+    this.gameState.healthPoints = 3;
     //Info text to show score and health points
-    this.infoText = this.add.text(
+    this.gameState.infoText = this.add.text(
       10,
       10,
-      `Coin count: ${this.coinCount}, Health: ${this.healthPoints}
+      `Coin count: ${this.gameState.coinCount}, Health: ${this.gameState.healthPoints}
 Press 'space' to pause`,
       {
         font: '24px Courier',
@@ -165,7 +103,7 @@ Press 'space' to pause`,
     );
 
     //Set what to show when game is paused
-    this.pauseText = this.add
+    this.gameState.pauseText = this.add
       .text(
         this.cameras.main.centerX,
         this.cameras.main.centerY,
@@ -173,20 +111,20 @@ Press 'space' to pause`,
         { font: '24px Courier' }
       )
       .setOrigin(0.5);
-    this.pauseText.setVisible(false);
+    this.gameState.pauseText.setVisible(false);
 
     //Add player to the scene
-    this.physics.add.existing(this.square);
+    this.physics.add.existing(this.gameState.square);
 
     //Initialize coins and add them to the scene
-    this.coins = this.physics.add.group({
+    this.gameState.coins = this.physics.add.group({
       immovable: false,
       bounceX: 1,
       bounceY: 1,
       collideWorldBounds: true,
     });
-    this.loadCoins(this.coins);
-    this.coins.getChildren().forEach((child) => {
+    this.loadCoins(this.gameState.coins);
+    this.gameState.coins.getChildren().forEach((child) => {
       child.body.velocity.x =
         Phaser.Math.Between(-100, -50) || Phaser.Math.Between(50, 100);
       child.body.velocity.y =
@@ -194,14 +132,14 @@ Press 'space' to pause`,
     });
 
     //Initialize enemies and add them to the scene
-    this.enemies = this.physics.add.group({
+    this.gameState.enemies = this.physics.add.group({
       immovable: false,
       bounceX: 1,
       bounceY: 1,
       collideWorldBounds: true,
     });
-    this.loadEnemies(this.enemies);
-    this.enemies.getChildren().forEach((child) => {
+    this.loadEnemies(this.gameState.enemies);
+    this.gameState.enemies.getChildren().forEach((child) => {
       child.body.velocity.x =
         Phaser.Math.Between(-300, -200) || Phaser.Math.Between(200, 300);
       child.body.velocity.y =
@@ -209,8 +147,16 @@ Press 'space' to pause`,
     });
 
     //Set overlap functions
-    this.physics.add.overlap(this.square, this.coins, this.collectCoin);
-    this.physics.add.overlap(this.square, this.enemies, this.hitEnemy);
+    this.physics.add.overlap(
+      this.gameState.square,
+      this.gameState.coins,
+      this.collectCoin
+    );
+    this.physics.add.overlap(
+      this.gameState.square,
+      this.gameState.enemies,
+      this.hitEnemy
+    );
 
     //Created a pause event when pressing 'Space'
     this.input.keyboard.on(
@@ -231,7 +177,7 @@ Press 'space' to pause`,
       window.innerWidth - 200,
       window.innerHeight - 200
     );
-    this.square.body.setCollideWorldBounds(true);
+    this.gameState.square.body.setCollideWorldBounds(true);
   }
 
   //Update function that gets called every frame
@@ -241,29 +187,29 @@ Press 'space' to pause`,
 
     //On pause event show the text
     this.events.on('pause', () => {
-      this.pauseText.setVisible(true);
+      this.gameState.pauseText.setVisible(true);
     });
 
     //On resume event hide the text
     this.events.on('resume', () => {
       console.log('Resumed');
-      this.pauseText.setVisible(false);
+      this.gameState.pauseText.setVisible(false);
     });
 
     //Player controls
     if (cursorKeys.up.isDown) {
-      this.square.body.setVelocityY(-500);
+      this.gameState.moveUp();
     } else if (cursorKeys.down.isDown) {
-      this.square.body.setVelocityY(500);
+      this.gameState.moveDown();
     } else {
-      this.square.body.setVelocityY(0);
+      this.gameState.resetMovementY();
     }
     if (cursorKeys.right.isDown) {
-      this.square.body.setVelocityX(500);
+      this.gameState.moveRight();
     } else if (cursorKeys.left.isDown) {
-      this.square.body.setVelocityX(-500);
+      this.gameState.moveLeft();
     } else {
-      this.square.body.setVelocityX(0);
+      this.gameState.resetMovementX();
     }
   }
 }
